@@ -30,90 +30,79 @@ ui <- pageWithSidebar(
 server <- function(input, output) {
   stockData <- new.env()
   
-  symbols <- function(symbol) getSymbols(symbol,env=stockData, from=input$dates[1])
-  apacoba <- NULL
-  mainfuncIST <- function(){
-    #if(input$get==0){return()} #confirming button click
-    #isolate({
+  dataInput <- reactive({
     if (input$get == 0)
       return(NULL)
-      sim <- input$symbol
-      getSymbols(sim,env=stockData, from=input$dates[1])
-      Data <- NULL
-      #get(sim[2], pos=stockData)[,6]
-      #diff(log(Cl(get(sim[1], pos=stockData))))
-      validate(need(sim != "", label = "stock"))
-      for (i in 1:length(sim)) {
-        #x[[i]] <-   # get data from stockData environment  
-        Data <- cbind(Data,Return.calculate((get(sim[i], pos=stockData)[,6])))
-      }
-      returns <- Data[-1,]
-      configs <- list()
-      for(i in 1:21) {
-        weightSPY <- (i-1)*.05
-        weightTLT <- 1-weightSPY
-        config <- Return.portfolio(R = returns, weights=c(weightSPY, weightTLT), rebalance_on = "months")
-        configs[[i]] <- config
-      }
-      configs <- do.call(cbind, configs)
-      cumRets <- cumprod(1+configs)
-      period <- 72
-      
-      roll72CumAnn <- (cumRets/lag(cumRets, period))^(252/period) - 1
-      roll72SD <- sapply(X = configs, runSD, n=period)*sqrt(252)
-      
-      
-      sd_f_factor <- 2.5
-      modSharpe <- roll72CumAnn/roll72SD^sd_f_factor
-      monthlyModSharpe <- modSharpe[endpoints(modSharpe, on="months"),]
-      
-      findMax <- function(data) {
-        return(data==max(data))
-      }
-      
-      weights <- t(apply(monthlyModSharpe, 1, findMax))
-      weights <- weights*1
-      weights <- xts(weights, order.by=as.Date(rownames(weights)))
-      weights[is.na(weights)] <- 0
-      weights$zeroes <- 1-rowSums(weights)
-      configs$zeroes <- 0
-      
-      
-      stratRets <- Return.portfolio(R = configs, weights = weights)
-      rbind(table.AnnualizedReturns(stratRets), maxDrawdown(stratRets))
-      charts.PerformanceSummary(stratRets)
-      
-      
-      stratAndComponents <- merge(returns, stratRets, join='inner')
-      charts.PerformanceSummary(stratAndComponents)
-      rbind(table.AnnualizedReturns(stratAndComponents), maxDrawdown(stratAndComponents))
-      apply.yearly(stratAndComponents, Return.cumulative)
-      
-      
-      weightSPY <- apply(monthlyModSharpe, 1, which.max)
-      weightSPY <- do.call(rbind, weightSPY)
-      weightSPY <- (weightSPY-1)*.05
-      align <- cbind(weightSPY, stratRets)
-      align <- na.locf(align)
-      apacoba <- chart.TimeSeries(align[,1], date.format="%Y", ylab="Weight SPY", main="Weight of SPY in SPY-TLT pair")
-        
-    #})
-
+    return(isolate({
+      getSymbols(input$symbol, src = "yahoo",env=stockData, from=input$dates[1])
+    }))
+  })
+  
+  datesInput <- reactive({
+    if (input$get == 0)
+      return(NULL)
+    
+    return(isolate({
+      paste0(input$dates[1], "::",  input$dates[2])
+    }))
+  })
+  
+  returns <- reactive({
+    if (input$get == 0)
+      return(NULL)
+    
+    dailyReturn(dataInput())
+  })
+  
+  configs <- reactive({
+    if (input$get == 0)
+      return(NULL)
+    
+    m_configs <- list()
+    for(i in 1:21) {
+      weight1 <- (i-1)*.05
+      weight2 <- 1-weight1
+      config <- Return.portfolio(R = returns, weights=c(weight1, weight2), rebalance_on = "months")
+      m_configs[[i]] <- config
+    }
+    m_configs <- do.call(cbind, m_configs)
+  })
+  
+  roll72CumAnn <- reactive({
+    if (input$get == 0)
+      return(NULL)
+    
+    cumRets <- cumprod(1+configs())
+    period <- 72
+    
+    (cumRets/lag(cumRets, period))^(252/period) - 1
+  })
+  
+  roll72SD <- reactive({
+    if (input$get == 0)
+      return(NULL)
+    sapply(X = configs(), runSD, n=period)*sqrt(252)
+  })
+  
+  monthlyModSharpe <- reactive({
+    if (input$get == 0)
+      return(NULL)
+    sd_f_factor <- 2.5
+    modSharpe <- roll72CumAnn()/roll72SD()^sd_f_factor
+    modSharpe[endpoints(modSharpe, on="months"),]
+  })
+  
+  findMax <- function(data) {
+    return(data==max(data))
   }
   
-  output$plot <- renderPlot({
-    input$get
-    apacoba
-  })
-
-
+  
   output$result <- renderPrint({
     if (input$get == 0)
       return(NULL)
-    symbols(input$symbol)
-  }
-
-    )
+    length(returns())
+    }
+  )
 }
 
 shinyApp(ui = ui, server = server)
