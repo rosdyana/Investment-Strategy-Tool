@@ -8,7 +8,8 @@ ui <- pageWithSidebar(
   )),
   
   sidebarPanel(
-    helpText("You can select maximum 2 ETF"),
+    width = 2,
+    helpText("Select two ETF to compare"),
     textInput('symbol', label="Enter ticker symbol", value="SPY;TLT"),
     helpText("Examples: SPY;TLT (separate by semi-colon)"),
     dateRangeInput(
