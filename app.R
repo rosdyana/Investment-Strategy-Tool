@@ -27,12 +27,17 @@ ui <- pageWithSidebar(
     tabPanel("Returns Performance", plotOutput("plot1")),
     tabPanel("Adjusted Performance", plotOutput("plot2")),
     tabPanel("Weight", plotOutput("plot3"))
-  ))
+  ),
+  downloadButton("downloadPDF", "Download Report"))
 )
 
 server <- function(input, output) {
   stockData <- new.env()
   
+  #*****************************************************************
+  # get data
+  #****************************************************************** 
+  # symbols
   dataInput <- reactive({
     if (input$get == 0)
       return(NULL)
@@ -41,6 +46,7 @@ server <- function(input, output) {
     }))
   })
   
+  # dates 
   datesInput <- reactive({
     if (input$get == 0)
       return(NULL)
@@ -55,24 +61,22 @@ server <- function(input, output) {
     return(data==max(data))
   }
   
+  #*****************************************************************
+  # MAIN FUNCTION
+  #******************************************************************
   mainfunc <- function(x){
-    #stockData <- new.env()
     sim <- x
-    #symbols <- getSymbols(sim,env=stockData, from="2013-01-01")
     Data <- NULL
-    #get(sim[2], pos=stockData)[,6]
-    #diff(log(Cl(get(sim[1], pos=stockData))))
     validate(need(sim != "", label = "stock"))
     for (i in 1:length(sim)) {
-      #x[[i]] <-   # get data from stockData environment  
       Data <- cbind(Data,Return.calculate((get(sim[i], pos=stockData)[,6])))
     }
     returns <- Data[-1,]
     configs <- list()
     for(i in 1:21) {
-      weightSPY <- (i-1)*.05
-      weightTLT <- 1-weightSPY
-      config <- Return.portfolio(R = returns, weights=c(weightSPY, weightTLT), rebalance_on = "months")
+      weight1 <- (i-1)*.05
+      weight2 <- 1-weight1
+      config <- Return.portfolio(R = returns, weights=c(weight1, weight2), rebalance_on = "months")
       configs[[i]] <- config
     }
     configs <- do.call(cbind, configs)
@@ -81,7 +85,6 @@ server <- function(input, output) {
     
     roll72CumAnn <- (cumRets/lag(cumRets, period))^(252/period) - 1
     roll72SD <- sapply(X = configs, runSD, n=period)*sqrt(252)
-    
     
     sd_f_factor <- 2.5
     modSharpe <- roll72CumAnn/roll72SD^sd_f_factor
@@ -104,8 +107,6 @@ server <- function(input, output) {
     output$plot1 <- renderPlot({
       charts.PerformanceSummary(stratRets)      
     })
-
-    
     
     stratAndComponents <- merge(returns, stratRets, join='inner')
     output$plot2 <- renderPlot({
@@ -114,16 +115,27 @@ server <- function(input, output) {
     rbind(table.AnnualizedReturns(stratAndComponents), maxDrawdown(stratAndComponents))
     apply.yearly(stratAndComponents, Return.cumulative)
     
-    
-    weightSPY <- apply(monthlyModSharpe, 1, which.max)
-    weightSPY <- do.call(rbind, weightSPY)
-    weightSPY <- (weightSPY-1)*.05
-    align <- cbind(weightSPY, stratRets)
+    weight1 <- apply(monthlyModSharpe, 1, which.max)
+    weight1 <- do.call(rbind, weight1)
+    weight1 <- (weight1-1)*.05
+    align <- cbind(weight1, stratRets)
     align <- na.locf(align)
     output$plot3 <- renderPlot({
       chart.TimeSeries(align[,1], date.format="%Y", ylab=paste("Weight ",dataInput()[1]), main=paste("Weight  in ",input$symbol," pair"))
-      
     })
+    # Download pdf report
+    output$downloadPDF <- downloadHandler(
+      filename = 'report.pdf',
+      content = function(file) {
+        pdf(file = file, width=8.5, height=11)
+        
+        charts.PerformanceSummary(stratRets)
+        charts.PerformanceSummary(stratAndComponents)
+        chart.TimeSeries(align[,1], date.format="%Y", ylab=paste("Weight ",dataInput()[1]), main=paste("Weight  in ",input$symbol," pair"))
+        dev.off()
+      }
+    )
+    outputOptions(output, "downloadPDF", suspendWhenHidden=FALSE)
     
   }
   
@@ -132,18 +144,23 @@ server <- function(input, output) {
     mainfunc(dataInput())
   })
   
+  #*****************************************************************
+  # About
+  #******************************************************************  
   observeEvent(input$about, {
     showModal(modalDialog(
       title = span(tagList(icon("info-circle"), "About")),
       tags$div(
         HTML(
           "<img src='https://avatars1.githubusercontent.com/u/4516635?v=3&s=460' width=150><br/><br/>",
-          "<p>Developer : Rosdyana Kusuma</br>Email : <a href=mailto:rosdyana.kusuma@gmail.com>rosdyana.kusuma@gmail.com</a></br>linkedin : <a href='https://www.linkedin.com/in/rosdyanakusuma/' target=blank>Open me</a></p>"
+          "<p>Developer : <a href='https://github.com/rosdyana' target=blank>Rosdyana Kusuma</a></br>Email : <a href=mailto:rosdyana.kusuma@gmail.com>rosdyana.kusuma@gmail.com</a></br>linkedin : <a href='https://www.linkedin.com/in/rosdyanakusuma/' target=blank>Open me</a></p>"
         )
       ),
       easyClose = TRUE
     ))
   })
+  
+
 }
 
 shinyApp(ui = ui, server = server)
