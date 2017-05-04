@@ -6,9 +6,9 @@ ui <- pageWithSidebar(
   headerPanel("Investment Strategy Tool", title = span(
     tagList(icon("line-chart"), "Investment Strategy Tool")
   )),
-  
+
   sidebarPanel(
-    width = 2,
+    width = 3,
     helpText("Select two ETF to compare"),
     textInput('symbol', label="Enter ticker symbol", value="SPY;TLT"),
     helpText("Examples: SPY;TLT (separate by semi-colon)"),
@@ -19,6 +19,7 @@ ui <- pageWithSidebar(
       end = Sys.Date(),
       format = 'yyyy-mm-dd'
     ),
+    textInput('weight',label = "Enter weight factor", value="0.05"),
     actionButton("get", "Run", icon("check-circle")),
     actionButton("about", "About", icon("info-circle")),
     hr()
@@ -33,10 +34,10 @@ ui <- pageWithSidebar(
 
 server <- function(input, output) {
   stockData <- new.env()
-  
+
   #*****************************************************************
   # get data
-  #****************************************************************** 
+  #******************************************************************
   # symbols
   dataInput <- reactive({
     if (input$get == 0)
@@ -45,26 +46,36 @@ server <- function(input, output) {
       getSymbols(input$symbol, src = "yahoo",env=stockData, from=input$dates[1])
     }))
   })
-  
-  # dates 
+
+  # dates
   datesInput <- reactive({
     if (input$get == 0)
       return(NULL)
-    
+
     return(isolate({
       paste0(input$dates[1], "::",  input$dates[2])
     }))
   })
- 
-  
+
+  # weight
+  getWeight <- reactive({
+    if (input$get == 0)
+      return(NULL)
+    return(isolate({
+      as.numeric(input$weight)
+    }))
+  })
+
+
   findMax <- function(data) {
     return(data==max(data))
   }
-  
+
   #*****************************************************************
   # MAIN FUNCTION
   #******************************************************************
   mainfunc <- function(x){
+    print("Do the main function\n")
     sim <- x
     Data <- NULL
     validate(need(sim != "", label = "stock"))
@@ -74,7 +85,7 @@ server <- function(input, output) {
     returns <- Data[-1,]
     configs <- list()
     for(i in 1:21) {
-      weight1 <- (i-1)*.05
+      weight1 <- (i-1)*getWeight()
       weight2 <- 1-weight1
       config <- Return.portfolio(R = returns, weights=c(weight1, weight2), rebalance_on = "months")
       configs[[i]] <- config
@@ -82,39 +93,39 @@ server <- function(input, output) {
     configs <- do.call(cbind, configs)
     cumRets <- cumprod(1+configs)
     period <- 72
-    
+
     roll72CumAnn <- (cumRets/lag(cumRets, period))^(252/period) - 1
     roll72SD <- sapply(X = configs, runSD, n=period)*sqrt(252)
-    
+
     sd_f_factor <- 2.5
     modSharpe <- roll72CumAnn/roll72SD^sd_f_factor
     monthlyModSharpe <- modSharpe[endpoints(modSharpe, on="months"),]
-    
+
     findMax <- function(data) {
       return(data==max(data))
     }
-    
+
     weights <- t(apply(monthlyModSharpe, 1, findMax))
     weights <- weights*1
     weights <- xts(weights, order.by=as.Date(rownames(weights)))
     weights[is.na(weights)] <- 0
     weights$zeroes <- 1-rowSums(weights)
     configs$zeroes <- 0
-    
-    
+
+
     stratRets <- Return.portfolio(R = configs, weights = weights)
     rbind(table.AnnualizedReturns(stratRets), maxDrawdown(stratRets))
     output$plot1 <- renderPlot({
-      charts.PerformanceSummary(stratRets)      
+      charts.PerformanceSummary(stratRets)
     })
-    
+
     stratAndComponents <- merge(returns, stratRets, join='inner')
     output$plot2 <- renderPlot({
       charts.PerformanceSummary(stratAndComponents)
     })
     rbind(table.AnnualizedReturns(stratAndComponents), maxDrawdown(stratAndComponents))
     apply.yearly(stratAndComponents, Return.cumulative)
-    
+
     weight1 <- apply(monthlyModSharpe, 1, which.max)
     weight1 <- do.call(rbind, weight1)
     weight1 <- (weight1-1)*.05
@@ -128,7 +139,7 @@ server <- function(input, output) {
       filename = 'report.pdf',
       content = function(file) {
         pdf(file = file, width=8.5, height=11)
-        
+
         charts.PerformanceSummary(stratRets)
         charts.PerformanceSummary(stratAndComponents)
         chart.TimeSeries(align[,1], date.format="%Y", ylab=paste("Weight ",dataInput()[1]), main=paste("Weight  in ",input$symbol," pair"))
@@ -136,17 +147,17 @@ server <- function(input, output) {
       }
     )
     outputOptions(output, "downloadPDF", suspendWhenHidden=FALSE)
-    
+    print("end of main function\n")
   }
-  
-  
+
+
   observeEvent(input$get, {
     mainfunc(dataInput())
   })
-  
+
   #*****************************************************************
   # About
-  #******************************************************************  
+  #******************************************************************
   observeEvent(input$about, {
     showModal(modalDialog(
       title = span(tagList(icon("info-circle"), "About")),
@@ -159,7 +170,7 @@ server <- function(input, output) {
       easyClose = TRUE
     ))
   })
-  
+
 
 }
 
