@@ -95,7 +95,7 @@ server <- function(input, output) {
   # MAIN FUNCTION
   #******************************************************************
   mainfunc <- function(x){
-    print("Do the main function\n")
+    #print("Do the main function")
     sim <- x
     Data <- NULL
     validate(need(sim != "", label = "stock"))
@@ -104,7 +104,6 @@ server <- function(input, output) {
     }
     returns <- Data[-1,]
     configs <- list()
-    print("run with weight : ",getWeight(),"\n")
     for(i in 1:21) {
       weight1 <- (i-1)*getWeight()
       weight2 <- 1-weight1
@@ -113,14 +112,12 @@ server <- function(input, output) {
     }
     configs <- do.call(cbind, configs)
     cumRets <- cumprod(1+configs)
-    print("run with period : ",getPeriod(),"\n")
     period <- getPeriod()
 
     roll72CumAnn <- (cumRets/lag(cumRets, period))^(252/period) - 1
     roll72SD <- sapply(X = configs, runSD, n=period)*sqrt(252)
 
     # start creating weight
-    print("run with sharpe ratio factor : ",getSharpe(),"\n")
     sd_f_factor <- getSharpe()
     modSharpe <- roll72CumAnn/roll72SD^sd_f_factor
     monthlyModSharpe <- modSharpe[endpoints(modSharpe, on="months"),]
@@ -138,27 +135,39 @@ server <- function(input, output) {
     # end creating weight
 
     # start performance
-    stratRets <- Return.portfolio(R = configs, weights = weights)
-    rbind(table.AnnualizedReturns(stratRets), maxDrawdown(stratRets))
-    output$plot1 <- renderPlot({
-      charts.PerformanceSummary(stratRets)
+    withProgress(message = 'Calculating . . .', value = 0, {
+      n <- 10
+
+      for (i in 1:n) {
+
+        stratRets <- Return.portfolio(R = configs, weights = weights)
+        rbind(table.AnnualizedReturns(stratRets), maxDrawdown(stratRets))
+        output$plot1 <- renderPlot({
+          charts.PerformanceSummary(stratRets)
+        })
+
+        stratAndComponents <- merge(returns, stratRets, join='inner')
+        output$plot2 <- renderPlot({
+          charts.PerformanceSummary(stratAndComponents)
+        })
+        rbind(table.AnnualizedReturns(stratAndComponents), maxDrawdown(stratAndComponents))
+        apply.yearly(stratAndComponents, Return.cumulative)
+
+        weight1 <- apply(monthlyModSharpe, 1, which.max)
+        weight1 <- do.call(rbind, weight1)
+        weight1 <- (weight1-1)*getWeight()
+        align <- cbind(weight1, stratRets)
+        align <- na.locf(align)
+        output$plot3 <- renderPlot({
+          chart.TimeSeries(align[,1], date.format="%Y", ylab=paste("Weight ",dataInput()[1]), main=paste("Weight  in ",input$symbol," pair"))
+        })
+
+        incProgress(1/n, detail = paste("Doing part", i))
+        Sys.sleep(0.1)
+      }
     })
 
-    stratAndComponents <- merge(returns, stratRets, join='inner')
-    output$plot2 <- renderPlot({
-      charts.PerformanceSummary(stratAndComponents)
-    })
-    rbind(table.AnnualizedReturns(stratAndComponents), maxDrawdown(stratAndComponents))
-    apply.yearly(stratAndComponents, Return.cumulative)
 
-    weight1 <- apply(monthlyModSharpe, 1, which.max)
-    weight1 <- do.call(rbind, weight1)
-    weight1 <- (weight1-1)*getWeight()
-    align <- cbind(weight1, stratRets)
-    align <- na.locf(align)
-    output$plot3 <- renderPlot({
-      chart.TimeSeries(align[,1], date.format="%Y", ylab=paste("Weight ",dataInput()[1]), main=paste("Weight  in ",input$symbol," pair"))
-    })
     # Download pdf report
     output$downloadPDF <- downloadHandler(
       filename = 'report.pdf',
@@ -172,7 +181,7 @@ server <- function(input, output) {
       }
     )
     outputOptions(output, "downloadPDF", suspendWhenHidden=FALSE)
-    print("end of main function\n")
+    #print("end of main function")
   }
 
 
