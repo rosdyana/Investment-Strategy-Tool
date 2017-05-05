@@ -19,7 +19,9 @@ ui <- pageWithSidebar(
       end = Sys.Date(),
       format = 'yyyy-mm-dd'
     ),
-    textInput('weight',label = "Enter weight factor", value="0.05"),
+    textInput('weight',label = "Weight tunning", value="0.05"),
+    textInput('period',label = "Period", value="72"),
+    textInput('sharpeF',label = "Sharpe ratio factor", value="2.5"),
     actionButton("get", "Run", icon("check-circle")),
     actionButton("about", "About", icon("info-circle")),
     hr()
@@ -66,6 +68,24 @@ server <- function(input, output) {
     }))
   })
 
+  # period
+  getPeriod <- reactive({
+    if (input$get == 0)
+      return(NULL)
+    return(isolate({
+      as.numeric(input$period)
+    }))
+  })
+
+  # sharpe factor
+  getSharpe <- reactive({
+    if (input$get == 0)
+      return(NULL)
+    return(isolate({
+      as.numeric(input$sharpeF)
+    }))
+  })
+
 
   findMax <- function(data) {
     return(data==max(data))
@@ -84,6 +104,7 @@ server <- function(input, output) {
     }
     returns <- Data[-1,]
     configs <- list()
+    print("run with weight : ",getWeight(),"\n")
     for(i in 1:21) {
       weight1 <- (i-1)*getWeight()
       weight2 <- 1-weight1
@@ -92,12 +113,15 @@ server <- function(input, output) {
     }
     configs <- do.call(cbind, configs)
     cumRets <- cumprod(1+configs)
-    period <- 72
+    print("run with period : ",getPeriod(),"\n")
+    period <- getPeriod()
 
     roll72CumAnn <- (cumRets/lag(cumRets, period))^(252/period) - 1
     roll72SD <- sapply(X = configs, runSD, n=period)*sqrt(252)
 
-    sd_f_factor <- 2.5
+    # start creating weight
+    print("run with sharpe ratio factor : ",getSharpe(),"\n")
+    sd_f_factor <- getSharpe()
     modSharpe <- roll72CumAnn/roll72SD^sd_f_factor
     monthlyModSharpe <- modSharpe[endpoints(modSharpe, on="months"),]
 
@@ -111,8 +135,9 @@ server <- function(input, output) {
     weights[is.na(weights)] <- 0
     weights$zeroes <- 1-rowSums(weights)
     configs$zeroes <- 0
+    # end creating weight
 
-
+    # start performance
     stratRets <- Return.portfolio(R = configs, weights = weights)
     rbind(table.AnnualizedReturns(stratRets), maxDrawdown(stratRets))
     output$plot1 <- renderPlot({
@@ -128,7 +153,7 @@ server <- function(input, output) {
 
     weight1 <- apply(monthlyModSharpe, 1, which.max)
     weight1 <- do.call(rbind, weight1)
-    weight1 <- (weight1-1)*.05
+    weight1 <- (weight1-1)*getWeight()
     align <- cbind(weight1, stratRets)
     align <- na.locf(align)
     output$plot3 <- renderPlot({
