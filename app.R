@@ -3,8 +3,8 @@ require(quantmod)
 require(PerformanceAnalytics)
 
 ui <- pageWithSidebar(
-  headerPanel("Investment Strategy Tool", title = span(
-    tagList(icon("line-chart"), "Investment Strategy Tool")
+  headerPanel("Universal Investment Strategy Tool", title = span(
+    tagList(icon("line-chart"), "Universal Investment Strategy Tool")
   )),
 
   sidebarPanel(
@@ -20,15 +20,15 @@ ui <- pageWithSidebar(
       format = 'yyyy-mm-dd'
     ),
     textInput('weight',label = "Weight tunning", value="0.05"),
-    textInput('period',label = "Period", value="72"),
+    textInput('period',label = "Period", value="252"),
     textInput('sharpeF',label = "Sharpe ratio factor", value="2.5"),
     actionButton("get", "Run", icon("check-circle")),
     actionButton("about", "About", icon("info-circle")),
     hr()
   ),
   mainPanel(  tabsetPanel(
-    tabPanel("Returns Performance", plotOutput("plot1")),
-    tabPanel("Adjusted Performance", plotOutput("plot2")),
+    tabPanel("Returns Performance", plotOutput("plot1"), verbatimTextOutput("anualReturn1")),
+    tabPanel("Adjusted Performance", plotOutput("plot2"), verbatimTextOutput("anualReturn2")),
     tabPanel("Weight", plotOutput("plot3"))
   ),
   downloadButton("downloadPDF", "Download Report"))
@@ -114,8 +114,8 @@ server <- function(input, output) {
     cumRets <- cumprod(1+configs)
     period <- getPeriod()
 
-    roll72CumAnn <- (cumRets/lag(cumRets, period))^(252/period) - 1
-    roll72SD <- sapply(X = configs, runSD, n=period)*sqrt(252)
+    roll72CumAnn <- (cumRets/lag(cumRets, 72))^(period/72) - 1
+    roll72SD <- sapply(X = configs, runSD, n=72)*sqrt(period)
 
     # start creating weight
     sd_f_factor <- getSharpe()
@@ -145,11 +145,13 @@ server <- function(input, output) {
         output$plot1 <- renderPlot({
           charts.PerformanceSummary(stratRets)
         })
+        output$anualReturn1 <- renderPrint(rbind(table.AnnualizedReturns(stratRets), maxDrawdown(stratRets)))
 
         stratAndComponents <- merge(returns, stratRets, join='inner')
         output$plot2 <- renderPlot({
           charts.PerformanceSummary(stratAndComponents)
         })
+        output$anualReturn2 <- renderPrint(rbind(table.AnnualizedReturns(stratAndComponents), maxDrawdown(stratAndComponents)))
         rbind(table.AnnualizedReturns(stratAndComponents), maxDrawdown(stratAndComponents))
         apply.yearly(stratAndComponents, Return.cumulative)
 
